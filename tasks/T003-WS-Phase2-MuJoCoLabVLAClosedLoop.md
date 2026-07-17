@@ -1,4 +1,4 @@
-﻿# T003-WS-Phase2-MuJoCoLabVLAClosedLoop
+﻿﻿# T003-WS-Phase2-MuJoCoLabVLAClosedLoop
 
 - Status: PENDING
 - Assignee: Company Desktop (WSL)
@@ -137,41 +137,113 @@ git clone --depth 1 https://github.com/google-deepmind/mujoco_menagerie.git
 
 ---
 
-### Step 4: End-to-End Validation
+### Step 4: End-to-End Validation (Fully Automated)
 
-**Setup (terminal 1 — LabVLA service):**
+All in one terminal — Claude Code handles starting the service and running the client.
+
+**Create `scripts/run_phase2.sh` — the one-shot automation script:**
 ```bash
-cd ~/projects/labvla-mujoco
-source /home/josan/miniforge3/etc/profile.d/conda.sh
-conda activate labvla-cu124
-PYTHONPATH="/home/josan/projects/labvla-mujoco/LabVLA" \
-  python LabVLA/deployment/serve_labvla.py \
-  --pretrained_path /home/josan/projects/labvla-mujoco/LabVLA-5B-Base \
+#!/bin/bash
+# Phase 2 automated runner
+# Starts LabVLA service in background, waits for ready, runs MuJoCo client, cleans up
+
+set -e
+
+PROJECT_DIR=~/projects/labvla-mujoco
+CONDA_BASE=/home/josan/miniforge3
+ENV_NAME=labvla-cu124
+LOG_FILE=$PROJECT_DIR/phase2_run.log
+SERVICE_LOG=$PROJECT_DIR/phase2_service.log
+
+cd "$PROJECT_DIR"
+
+# Activate conda
+source "$CONDA_BASE/etc/profile.d/conda.sh"
+conda activate "$ENV_NAME"
+
+echo "[Phase2] Starting LabVLA inference service (background)..." | tee -a "$LOG_FILE"
+
+# Start service in background, redirect output
+PYTHONPATH="$PROJECT_DIR/LabVLA" \
+  nohup python LabVLA/deployment/serve_labvla.py \
+  --pretrained_path "$PROJECT_DIR/LabVLA-5B-Base" \
   --vlm_path Qwen/Qwen3-VL-4B-Instruct \
-  --device cuda --port 8000
+  --device cuda --port 8000 \
+  > "$SERVICE_LOG" 2>&1 &
+SERVICE_PID=$!
+echo "[Phase2] Service PID: $SERVICE_PID" | tee -a "$LOG_FILE"
+
+# Poll for service readiness (port 8000)
+echo "[Phase2] Waiting for service to be ready (this may take 2-3 minutes)..." | tee -a "$LOG_FILE"
+MAX_WAIT=300  # 5 minutes max
+WAITED=0
+while [ $WAITED -lt $MAX_WAIT ]; do
+    if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health 2>/dev/null | grep -q 200; then
+        echo "[Phase2] Service is ready! (after ${WAITED}s)" | tee -a "$LOG_FILE"
+        break
+    fi
+    # Also check for "Listening on port" in log as fallback
+    if grep -q "Listening on port" "$SERVICE_LOG" 2>/dev/null; then
+        echo "[Phase2] Service log says ready! (after ${WAITED}s)" | tee -a "$LOG_FILE"
+        break
+    fi
+    sleep 5
+    WAITED=$((WAITED + 5))
+done
+
+if [ $WAITED -ge $MAX_WAIT ]; then
+    echo "[Phase2] ERROR: Service did not start within ${MAX_WAIT}s" | tee -a "$LOG_FILE"
+    tail -30 "$SERVICE_LOG" >> "$LOG_FILE"
+    kill $SERVICE_PID 2>/dev/null
+    exit 1
+fi
+
+# Give it a few more seconds for WebSocket to bind
+sleep 3
+
+# Run the MuJoCo client
+echo "[Phase2] Running MuJoCo client ($NUM_STEPS frames)..." | tee -a "$LOG_FILE"
+PYTHONPATH="$PROJECT_DIR/LabVLA" \
+  python scripts/mujoco_client.py \
+  --host 127.0.0.1 --port 8000 \
+  --prompt "pick up the beaker" \
+  --num_steps 5 \
+  2>&1 | tee -a "$LOG_FILE"
+
+CLIENT_EXIT=${PIPESTATUS[0]}
+
+# Cleanup
+echo "[Phase2] Cleaning up service (PID $SERVICE_PID)..." | tee -a "$LOG_FILE"
+kill $SERVICE_PID 2>/dev/null
+wait $SERVICE_PID 2>/dev/null || true
+
+if [ $CLIENT_EXIT -eq 0 ]; then
+    echo "[Phase2] ✅ Closed-loop validation complete!" | tee -a "$LOG_FILE"
+else
+    echo "[Phase2] ❌ Client exited with code $CLIENT_EXIT" | tee -a "$LOG_FILE"
+fi
 ```
 
-**Run (terminal 2):**
+**After creating the script**, run it:
 ```bash
 cd ~/projects/labvla-mujoco
-source /home/josan/miniforge3/etc/profile.d/conda.sh
-conda activate labvla-cu124
-PYTHONPATH="/home/josan/projects/labvla-mujoco/LabVLA" \
-  python scripts/mujoco_client.py --host 127.0.0.1 --port 8000 \
-  --prompt "pick up the beaker" --num_steps 5
+chmod +x scripts/run_phase2.sh
+bash scripts/run_phase2.sh 2>&1 | tee phase2_console.log
 ```
 
-**Requirements:**
-- Wait for LabVLA service to fully load (2-3 min, look for "Listening on port 8000")
-- Run client in a second terminal
-- Let it run ≥5 frames
-- Expect ~2s/frame
+**What will happen:**
+1. Script starts LabVLA service in background (2-3 min load time)
+2. Auto-polls port 8000 until ready
+3. Runs MuJoCo client for 5 frames
+4. Kills the service when done
+5. Everything logged to `phase2_run.log` + `phase2_console.log`
 
-**Troubleshooting:**
-- OOM? → add `torch.cuda.empty_cache()` calls, or reduce render resolution
-- WebSocket timeout? → increase timeout
-- If `mujoco.viewer` blocks the loop, use `mujoco.MjModel.from_xml_path()` with offscreen rendering
-- If `cv2` not available, use `PIL` for image saving
+**Troubleshooting (if `run_phase2.sh` fails):**
+- OOM? → Edit `mujoco_client.py` to render at lower res (128x128) or reduce to 1 camera
+- `curl` not available? → Use Python-based health check instead: `python -c "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',8000)); s.close()"`
+- Service log not showing "Listening"? → Check `phase2_service.log` for errors
+- The `PYTHONPATH` in the service command may need to be adjusted for LabVLA imports  
+- If `mujoco.viewer` blocks, use offscreen rendering only (no viewer window)
 
 ---
 
