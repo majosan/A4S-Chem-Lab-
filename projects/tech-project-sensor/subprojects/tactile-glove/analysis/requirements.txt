@@ -1,0 +1,15 @@
+# Tactile Glove Analysis — Python Dependencies
+
+# Core data processing
+numpy>=1.26.0
+pandas>=2.2.0
+scipy>=1.13.0          # linear regression (scipy.stats.linregress)
+
+# Visualisation
+matplotlib>=3.9.0
+seaborn>=0.13.0        # heatmaps
+
+# Report generation (HTML — stdlib only, no extra deps)
+# Jinja2 is optional; the report module uses f-strings / string templates
+# by default.  Uncomment the line below if you later switch to Jinja2:
+# Jinja2>=3.1.0
