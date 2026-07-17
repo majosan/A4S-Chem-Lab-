@@ -1,0 +1,36 @@
+# ===== 个人/敏感信息 =====
+USER.md
+MEMORY.md
+memory/
+HEARTBEAT.md
+TOOLS.md
+IDENTITY.md
+
+# ===== MuJoCo 模型库（公开数据，可独立下载）=====
+projects/ai-chem-lab/data/simulation/mujoco_menagerie/
+
+# ===== Python 等临时文件 =====
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# ===== Node =====
+node_modules/
+.env
+
+# ===== IDE & OS =====
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== 日志 =====
+*.log
