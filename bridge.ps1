@@ -1,14 +1,13 @@
 <#
 .SYNOPSIS
-  A4S 协作桥 — 连接本地 Claude Code 与传感前锋服务器
+  A4S Collaboration Bridge
 .DESCRIPTION
-  一键 pull → 显示待处理 task → push 结果
-  每台机器有自己的标识，只显示分配给自己的 task。
+  Connect local Claude Code with the Sensing Vanguard server.
+  One command to pull, show tasks, and push results.
 #>
 
 param(
   [Parameter(Position=0)]
-  [ValidateSet("pull","push","status","task")]
   [string]$Action = "pull",
 
   [Parameter(Position=1)]
@@ -18,95 +17,92 @@ param(
   [string]$Message = ""
 )
 
-# ========== 配置区 ==========
-# 修改这里的机器标识（WS=公司台式, LP=笔记本, HM=家里台式）
+# ========== Configuration ==========
+# Machine ID: WS=Company Desktop, LP=Laptop, HM=Home Desktop
 $MACHINE_NAME = "WS"
-$MACHINE_LABEL = switch ($MACHINE_NAME) {
-  "WS" { "🏢 公司台式" }
-  "LP" { "💻 笔记本" }
-  "HM" { "🏠 家里台式" }
-  default { "❓ 未知" }
-}
 
 $REPO_PATH = Split-Path -Parent $MyInvocation.MyCommand.Path
 $TASKS_DIR = Join-Path $REPO_PATH "tasks"
 
-# ========== 颜色输出 ==========
-function Write-Info  { Write-Host "ℹ️  $($args)" -ForegroundColor Cyan }
-function Write-Ok    { Write-Host "✅ $($args)" -ForegroundColor Green }
-function Write-Warn  { Write-Host "⚠️  $($args)" -ForegroundColor Yellow }
-function Write-Error { Write-Host "❌ $($args)" -ForegroundColor Red }
-function Write-Title { Write-Host ""
-  Write-Host "══════════════════════════════════════════════" -ForegroundColor Magenta
-  Write-Host "  $($args)" -ForegroundColor Magenta
-  Write-Host "══════════════════════════════════════════════" -ForegroundColor Magenta
+# ========== Machine labels ==========
+$MACHINE_LABEL = switch ($MACHINE_NAME) {
+  "WS" { "[WS] Company Desktop" }
+  "LP" { "[LP] Laptop" }
+  "HM" { "[HM] Home Desktop" }
+  default { "[??] Unknown" }
 }
 
-# ========== 功能函数 ==========
+# ========== Utility functions ==========
+function Write-Info  { Write-Host "[i] $($args)" -ForegroundColor Cyan }
+function Write-Ok    { Write-Host "[OK] $($args)" -ForegroundColor Green }
+function Write-Warn  { Write-Host "[!] $($args)" -ForegroundColor Yellow }
+function Write-Error { Write-Host "[X] $($args)" -ForegroundColor Red }
+function Write-Sep   { Write-Host ("="*55) -ForegroundColor Magenta }
+function Write-Title { Write-Host ""; Write-Sep; Write-Host "  $($args)" -ForegroundColor Magenta; Write-Sep }
 
+# ========== Git operations ==========
 function Git-Pull {
-  Write-Info "从 GitHub 拉取最新..."
+  Write-Info "Pulling latest from GitHub..."
   Set-Location $REPO_PATH
   $result = git pull origin master 2>&1 | Out-String
   if ($LASTEXITCODE -eq 0) {
-    Write-Ok "拉取成功"
+    Write-Ok "Pull successful"
     return $true
   } else {
-    Write-Error "拉取失败: $result"
+    Write-Error "Pull failed: $result"
     return $false
   }
 }
 
 function Git-Push {
   param([string]$Msg)
-  Write-Info "推送到 GitHub..."
+  Write-Info "Pushing to GitHub..."
   Set-Location $REPO_PATH
   git add -A 2>&1 | Out-Null
-  git status --short 2>&1 | Out-String | Write-Host -ForegroundColor Gray
-  $commitMsg = if ($Msg) { $Msg } else { "[$MACHINE_NAME] $(Get-Date -Format 'yyyy-MM-dd HH:mm') 自动提交" }
+  $changes = git status --short 2>&1 | Out-String
+  if ($changes.Trim()) {
+    Write-Host $changes -ForegroundColor Gray
+  } else {
+    Write-Warn "No changes to commit"
+    return $true
+  }
+  $commitMsg = if ($Msg) { $Msg } else { "[$MACHINE_NAME] $(Get-Date -Format 'yyyy-MM-dd HH:mm') auto commit" }
   git commit -m $commitMsg 2>&1 | Out-String | Write-Host -ForegroundColor Gray
   $result = git push origin master 2>&1 | Out-String
   if ($LASTEXITCODE -eq 0) {
-    Write-Ok "推送成功"
+    Write-Ok "Push successful"
     return $true
   } else {
-    Write-Error "推送失败: $result"
+    Write-Error "Push failed: $result"
     return $false
   }
 }
 
 function Show-MyTasks {
-  Write-Title "$MACHINE_LABEL — 待处理 Task"
+  Write-Title "$MACHINE_LABEL -- Pending Tasks"
 
+  $pattern = "^T\d+-($MACHINE_NAME|ALL)-"
   $tasks = @(Get-ChildItem "$TASKS_DIR\*.md" -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match "^T\d+-(WS|LP|HM|ALL)-" })
+    Where-Object { $_.Name -match $pattern })
 
   if ($tasks.Count -eq 0) {
-    Write-Host "  暂无任务" -ForegroundColor Gray
+    Write-Host "  (no pending tasks)" -ForegroundColor Gray
     return
   }
 
   foreach ($t in $tasks) {
     $content = Get-Content $t.FullName -Raw
-    $statusMatch = [regex]::Match($content, '状态:\s*(\S+)')
-    $status = if ($statusMatch.Success) { $statusMatch.Groups[1].Value } else { "未知" }
-    $prioMatch = [regex]::Match($content, '优先级:\s*(\S+)')
+    $statusMatch = [regex]::Match($content, 'Status:\s*(\S+)')
+    $status = if ($statusMatch.Success) { $statusMatch.Groups[1].Value } else { "unknown" }
+    $prioMatch = [regex]::Match($content, 'Priority:\s*(\S+)')
     $prio = if ($prioMatch.Success) { $prioMatch.Groups[1].Value } else { "" }
-    $descMatch = [regex]::Match($content, '## 任务描述\s*\n(.+?)(?=\n##|\z)')
-    $desc = if ($descMatch.Success) { $descMatch.Groups[1].Value.Trim() } else { "无描述" }
-
-    $statusColor = switch ($status) {
-      "⏳" { "Yellow" }
-      "✅" { "Green" }
-      "🔄" { "Cyan" }
-      "❌" { "Red" }
-      default { "Gray" }
-    }
+    $descMatch = [regex]::Match($content, '## Description\s*\n(.+?)(?=\n## |\z)', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $desc = if ($descMatch.Success) { $descMatch.Groups[1].Value.Trim() } else { "(no description)" }
 
     Write-Host ""
-    Write-Host "  $($t.BaseName)  [$(if ($prio) { $prio } else { '' })]" -ForegroundColor White
-    Write-Host "  状态: " -NoNewline; Write-Host "$status" -ForegroundColor $statusColor
-    Write-Host "  描述: $desc" -ForegroundColor Gray
+    Write-Host "  $($t.BaseName) [$prio]" -ForegroundColor White
+    Write-Host "  Status: $status"
+    Write-Host "  $desc" -ForegroundColor Gray
     Write-Host ""
   }
 }
@@ -115,10 +111,9 @@ function Show-Task {
   param([string]$FileName)
   $taskPath = Join-Path $TASKS_DIR $FileName
   if (-not (Test-Path $taskPath)) {
-    # 尝试前缀匹配
     $matches = Get-ChildItem "$TASKS_DIR\$FileName*.md" -ErrorAction SilentlyContinue
     if ($matches.Count -eq 0) {
-      Write-Error "找不到 task: $FileName"
+      Write-Error "Task not found: $FileName"
       return
     }
     $taskPath = $matches[0].FullName
@@ -126,20 +121,19 @@ function Show-Task {
   Get-Content $taskPath | Write-Host
 }
 
-# ========== 主逻辑 ==========
-
+# ========== Main ==========
 switch ($Action) {
   "pull" {
-    Write-Title "A4S 协作桥 — $MACHINE_LABEL"
+    Write-Title "A4S Collaboration Bridge -- $MACHINE_LABEL"
     if (Git-Pull) {
       Show-MyTasks
     }
     Write-Host ""
-    Write-Info "用法:"
-    Write-Host "  .\bridge.ps1 pull              ← 拉取最新 + 看 task" -ForegroundColor Gray
-    Write-Host "  .\bridge.ps1 push '提交说明'    ← 推送结果" -ForegroundColor Gray
-    Write-Host "  .\bridge.ps1 task T001          ← 查看具体 task 内容" -ForegroundColor Gray
-    Write-Host "  .\bridge.ps1 status             ← 查看仓库状态" -ForegroundColor Gray
+    Write-Info "Usage:"
+    Write-Host "  .\bridge.ps1 pull              - Pull latest + show tasks" -ForegroundColor Gray
+    Write-Host "  .\bridge.ps1 push 'message'     - Push results" -ForegroundColor Gray
+    Write-Host "  .\bridge.ps1 task T001          - Show task details" -ForegroundColor Gray
+    Write-Host "  .\bridge.ps1 status             - Show git status" -ForegroundColor Gray
   }
 
   "push" {
