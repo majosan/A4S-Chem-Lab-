@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   A4S Collaboration Bridge
 .DESCRIPTION
