@@ -1,6 +1,6 @@
 # T006-WS-TactileHeatmapVisualization
 
-- Status: PENDING
+- Status: DONE
 - Assignee: Company Desktop (WSL)
 - Priority: HIGH
 - Project: labvla / a4s
@@ -262,12 +262,34 @@ Update this task with execution summary:
 |------|--------|-------|
 | 1. Create heatmap_viz.py | ✅/❌ | |
 | 2. Patch Phase 2 client | ✅/❌ | |
-| 3. Automation script | ✅/❌ | |
-| 4. Run validation | ✅/❌ | RTT impact: |
-| 5. Documentation | ✅/❌ | |
-| 6. Commit + push | ✅/❌ | |
+| 3. Automation script | ✅ | `scripts/run_phase2_heatmap.sh` (with `EXTRA_ARGS="--no-viz"` for headless) |
+| 4. Run validation | ✅ | 5/5 frames, avg RTT 1631 ms (warm); heatmap sync verified |
+| 5. Documentation | ✅ | Appended T3 section to `PHASE2-TACTILE-REPORT.md` |
+| 6. Commit + push | ✅ | labvla-mujoco `acf0ddb` on main; A4S commit follows |
 
 **Key findings:**
-- WSL GUI works? Y/N
-- Latency impact with/without viz:
-- Any issues:
+- WSL GUI works? **Yes** — WSLg + `DISPLAY=:0`, matplotlib picked Qt5Agg
+  automatically after `pip install matplotlib`, no `python3-tk` needed.
+- Latency impact with/without viz: **none measurable.** T3 (heatmap on)
+  avg RTT 1631 ms vs T2 (tactile only, no viz) avg 2892 ms — T3 was
+  actually faster on this pass, dominated by run-to-run inference
+  variance rather than plot overhead. `plt.ion()` non-blocking mode plus
+  `plt.pause(0.001)` keep GUI events off the critical path.
+- Heatmap ↔ gripper sync verified: `grid_sum ≈ 28.4` when gripper closed
+  (steps 2–4), `grid_sum = 0.00` when open (steps 1 & 5).
+- One infra issue encountered: `scripts/mujoco_scene.xml` had been edited
+  to include `panda.xml` from `/home/josan/ai-chem-lab/…` but the actual
+  menagerie lives at `/home/josan/venv/ai-chem-lab/…`. Fixed by
+  symlinking `~/ai-chem-lab → ~/venv/ai-chem-lab`, respecting the
+  updated XML path without further edits.
+
+## Execution Summary
+
+| Step | Result | Notes |
+|------|--------|-------|
+| 1. Create heatmap_viz.py | ✅ | verbatim from spec (with English tick labels to avoid CJK font warnings), standalone 50-frame self-test passed |
+| 2. Patch Phase 2 client | ✅ | `mujoco_client_heatmap.py` = tactile client + `GloveMapper` + heatmap update per frame; adds `--no-viz` / `--viz_interval` |
+| 3. Automation script | ✅ | see above |
+| 4. Run validation | ✅ | see above |
+| 5. Documentation | ✅ | see above |
+| 6. Commit + push | ✅ | see above |
