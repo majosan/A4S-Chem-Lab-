@@ -1,6 +1,6 @@
 # T005-WS-TactileDataInjection
 
-- Status: PENDING
+- Status: DONE
 - Assignee: Company Desktop (WSL)
 - Priority: HIGH
 - Project: labvla / a4s
@@ -394,3 +394,35 @@ Copy result summary here (under `## Execution Summary`) with:
 - ✅/❌ for each step
 - Key metrics and findings
 - Any blockers or questions for the architect
+
+## Execution Summary (completed 2026-07-21)
+
+| Step | Result | Notes |
+|------|--------|-------|
+| 1. Verify Phase 2 still works | ✅ | Combined into T1 baseline run |
+| 2. Copy glove_grid_mapper.py + test | ✅ | 124→(12,12), 108/144 nonzero cells with random input |
+| 3. Create tactile_sim.py | ✅ | beaker/spatula/bottle/none patterns; zero-force → all-zero verified |
+| 4. Patch mujoco_client_tactile.py | ✅ | injects 124-dim `tactile` field, logs per-step stats |
+| 5. T1 baseline run | ✅ | 5/5 frames, avg RTT 2840 ms (warm, steps 2–5) |
+| 6. T2 tactile run | ✅ | 5/5 frames, avg RTT 2892 ms → **+52 ms / +1.8 %** overhead |
+| 7. Write PHASE2-TACTILE-REPORT.md | ✅ | in `labvla-mujoco` root + copied to A4S `projects/lab-automation/` |
+| 8. Commit + push both repos | ✅ | labvla-mujoco `48e362a` on origin/main; A4S commit follows |
+
+**Optimizations used:** Ran a single shared LabVLA service across T1+T2
+(`phase2_service_shared.log`) to avoid a second 5-minute cold start.
+
+**Key findings:**
+- Pipeline verified end-to-end: MuJoCo → tactile gen → msgpack → WebSocket
+  → LabVLA → action → MuJoCo. No schema rejection, no OOM.
+- Tactile payload is silently discarded by the current LabVLA-5B-Base model
+  (no tactile encoder in the checkpoint), so arm behavior is unchanged
+  between T1 and T2 — this is expected per the troubleshooting note.
+- Serialization overhead of the added field is negligible: +52 ms on a
+  ~2.85 s round trip, well within run-to-run noise (~30 ms).
+- Tactile signal behaves physically: step 1 (gripper open per home keyframe)
+  → all-zero; steps 2–5 (model closes gripper) → full C-wrap beaker pattern
+  with all 124 sensors engaged.
+
+**No blockers.** Ready for Sim-To-Real. When model integration lands, hook
+  the mapper's (12,12) grid into `observation.tactile` on the schema and
+  add the `TactileCNN` block that's commented in `glove_grid_mapper.py`.

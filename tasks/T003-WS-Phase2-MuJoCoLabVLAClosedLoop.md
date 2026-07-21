@@ -1,6 +1,6 @@
 ﻿﻿# T003-WS-Phase2-MuJoCoLabVLAClosedLoop
 
-- Status: PENDING
+- Status: DONE
 - Assignee: Company Desktop (WSL)
 - Priority: HIGH
 - Project: labvla
@@ -306,3 +306,37 @@ or
 - All new code goes in `scripts/`
 - If the conda env is missing mujoco/websocket-client, install them with pip (not conda)
 - Use `HF_ENDPOINT=https://hf-mirror.com` if huggingface.co is unreachable
+
+## Execution Summary (completed 2026-07-17)
+
+✅ **Step 1 — MuJoCo Scene Setup**
+- Franka Panda loaded from mujoco_menagerie (12 bodies, 9 joints, 8 actuators)
+- Table surface and two static lab objects (beaker + test tube) added
+- Key issue: MuJoCo 3.x resolves `meshdir="assets"` from the MAIN file's directory when included files are used. Fixed with `scripts/assets → .../franka_emika_panda/assets` symlink.
+
+✅ **Step 2 — Camera Configuration**
+- 3×224×224 RGB cameras configured: front-top, side-left, side-right
+- Camera xyaxes computed via Gram-Schmidt from look-at vectors
+- All cameras produce valid uint8 images (min>0, max=255, mean 120–142)
+- PNG test frames saved: `scripts/camera_*_test.png`
+
+✅ **Step 3 — WebSocket Client Integration**
+- `scripts/mujoco_client.py`: reconnects per step (matches known Phase-1 protocol)
+- Reads 8-dim qpos, renders 3 cameras, builds msgpack observation, sends to LabVLA
+- Applies `action[0, :7]` as arm delta (joint-limit clamped); `action[0, 7]` binarized at 0.5 for gripper
+
+✅ **Step 4 — End-to-End Validation**
+- `scripts/run_phase2.sh` ran successfully in one terminal pass
+- Service ready after **230 s** (RTX 4060 4-bit model load)
+- 5 closed-loop steps completed:
+  - Step 1 RTT: 10820 ms (CUDA warmup)
+  - Steps 2–5 avg RTT: **2692 ms**
+  - Delta arm range per step: up to ±3.0 rad (large but clipped to joint limits)
+  - Final qpos diverged from home — arm moved physically to a new configuration
+- Logs: `phase2_run.log`, `phase2_service.log`, `phase2_console.log`
+
+✅ **Step 5 — PHASE2-REPORT.md**
+- Written to `~/projects/labvla-mujoco/PHASE2-REPORT.md`
+- Commit `74ca8e5` pushed to `origin/main`
+
+**No unresolved blockers.** Proceed to Phase 3.
