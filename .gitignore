@@ -1,15 +1,28 @@
-# ===== 个人/敏感信息 =====
+# ===== AI 工作区系统文件（不同步到 Obsidian）=====
+AGENTS.md
+SOUL.md
+IDENTITY.md
+HEARTBEAT.md
+TOOLS.md
 USER.md
 MEMORY.md
 memory/
-HEARTBEAT.md
-TOOLS.md
-IDENTITY.md
+bridge.ps1
+.claude/
+.clawdhub/
+.clawhub/
+.openclaw/
+skills/
+subagents/
+
+# ===== Node / Env =====
+node_modules/
+.env
 
 # ===== MuJoCo 模型库（公开数据，可独立下载）=====
 projects/ai-chem-lab/data/simulation/mujoco_menagerie/
 
-# ===== Python 等临时文件 =====
+# ===== Python == ====
 __pycache__/
 *.pyc
 *.pyo
@@ -18,10 +31,6 @@ __pycache__/
 dist/
 build/
 *.egg
-
-# ===== Node =====
-node_modules/
-.env
 
 # ===== IDE & OS =====
 .vscode/settings.json
