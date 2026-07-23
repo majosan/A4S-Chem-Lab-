@@ -1,0 +1,8 @@
+# Obsidian
+.obsidian/workspace.json
+.obsidian/workspace
+.trash/
+
+# OS
+.DS_Store
+Thumbs.db
